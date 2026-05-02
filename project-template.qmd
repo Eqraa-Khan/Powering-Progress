@@ -1,0 +1,554 @@
+---
+title: "Powering Progress: How Economic Development Shapes Electricity Outcomes Across Africa"
+author: "Eqraa Khan, Shutong Zhao, Yining Weng, Yiren Ding | Group 0106-E"
+date: today
+format:
+  beamer:
+    theme: Madrid
+    colortheme: default
+    fonttheme: serif
+    aspectratio: 169
+    slide-level: 2
+    toc: false
+    incremental: false
+    pdf-engine: pdflatex
+    keep-tex: false
+editor: visual
+---
+
+```{r setup, include=FALSE}
+library(gridExtra)
+library(tidyverse)
+library(knitr)
+library(cowplot)
+knitr::opts_chunk$set(
+echo = FALSE,
+include = TRUE,
+warning = FALSE,
+message = FALSE,
+results = "markup",
+fig.width = 6,
+fig.height = 3.5,
+fig.align = "center",
+out.width = "80%"
+)
+```
+
+```{r load-data, echo=FALSE}
+### Read in data
+CATF_data <- read_csv("CATF_data.csv")
+```
+
+```{r clean_data, include=FALSE}
+
+## Clean the data 
+
+## E.g., remove unrealistic populations
+#CATF_data |> arrange(population) |> View()
+
+#CATF_data <- CATF_data |> filter(population > 100)
+## Alternatively, we could convert them to the correct values for each country by 
+## seeing roughly what the population values for each country are and scaling up accordingly.
+
+
+# ============================================================
+# Aggregate CATF_data: one row per country
+# ============================================================
+# Each country has multiple rows (one per student). We collapse
+# them into a single row using sensible summary functions.
+#
+# General strategy:
+#   - numeric columns  → median  (robust to outliers / typos)
+#   - character columns → mode   (most common value reported)
+#
+# Feel free to swap median() for mean() or mode() on any
+# variable if you think a different choice is more appropriate.
+# ============================================================
+
+
+# --- helper function: statistical mode (most frequent value) ----
+# works for both character and numeric vectors
+stat_mode <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(NA)
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# --- identify column types --------------------------------------
+numeric_cols <- CATF_data |>
+  select(where(is.numeric)) |>
+  names()
+
+character_cols <- CATF_data |>
+  select(where(is.character), -country) |>
+  names()
+
+# --- aggregate -----------------------------------------------
+CATF_clean <- CATF_data |>
+  group_by(country) |>
+  summarise(
+    across(all_of(numeric_cols), function(x){ median(x, na.rm = TRUE) }),
+    across(all_of(character_cols), stat_mode),
+    n_sources = n()
+  ) |>
+  filter(
+    population           > 500000,
+    electrification_rate <= 100,
+    electrification_rate >= 0,
+    gdp                  > 0,
+    gdp                  < 50000
+  ) |>
+  mutate(
+    gdp_group = case_when(
+      gdp <= quantile(gdp, 1/3, na.rm = TRUE) ~ "Low",
+      gdp <= quantile(gdp, 2/3, na.rm = TRUE) ~ "Middle",
+      TRUE                                     ~ "High"
+    ),
+    gdp_group = factor(gdp_group, levels = c("Low", "Middle", "High")),
+    income_group = case_when(
+      gdp < 1000  ~ "Low Income",
+      gdp < 4000  ~ "Lower-Middle",
+      gdp < 12500 ~ "Upper-Middle",
+      TRUE        ~ "High Income"
+    ),
+    income_group = factor(income_group,
+                          levels = c("Low Income", "Lower-Middle",
+                                     "Upper-Middle", "High Income")),
+    urban_rural_gap = urban_access_electricity_rate - rural_access_electricity_rate
+  )
+
+# --- quick check ---------------------------------------------
+#glimpse(CATF_clean)
+
+# How many unique countries do we have?
+#nrow(CATF_clean)
+
+# ============================================================
+# CUSTOMISATION IDEAS
+# ============================================================
+# If you'd prefer to use the mean for some variables and the
+# median for others, you can split them up like this:
+#
+# CATF_clean <- CATF_data |>
+#   group_by(country) |>
+#   summarise(
+#     # Variables where mean makes sense
+#     across(c(gdp, population),
+#            function(x){ mean(x, na.rm = TRUE) } ),
+#
+#     # Variables where median is more robust
+#     across(c(poverty_rate, hdi, median_age),
+#            function(x){ median(x, na.rm = TRUE) } ),
+#
+#     # Variables where mode makes sense (e.g. categorical-ish)
+#     across(c(renewable_target_solar, renewable_target_wind),
+#            stat_mode),
+#
+#     n_sources = n()
+#   )
+# ============================================================
+
+
+```
+
+## Introduction
+
+**Background:** Clean Air Task Force (CATF) is a nonprofit organization dedicated to advancing clean energy and climate solutions. It is supporting the development of an Electricity Sector Performance Scorecard for African countries.
+
+**Overarching Theme:** How does economic development shape electricity access, reliability, and sustainability across African countries?
+
+**Research Goal:** Identify patterns to inform which indicators CATF should prioritize in the Scorecard.
+
+**Target population:** African countries with available utility and national electricity data.
+
+**Audience:** CATF Africa staff and policymakers, identify which country groups underperform and where Scorecard indicators should focus.
+
+## Data Summary
+
+**Key Variables:**
+
+-   **GDP :** GDP per capita (USD), measure of economic development
+-   **Electrification Rate :** % of population with electricity access
+-   **Urban Access Electricity Rate :** % of urban population with electricity
+-   **Rural Access Electricity Rate :** % of rural population with electricity
+-   **Poverty Rate :** % of population below the poverty line
+-   **SAIDI :** average outage hours per customer per year
+-   **Urbanization Rate :** % of population living in urban areas
+-   **Electric Power Consumption :** average kWh consumed per capita
+
+## **Data Wrangling**
+
+-   Collapsed multiple rows per country using median (numeric) and mode (categorical)
+-   Removed implausible values (electrification rate more than 100%, GDP more than \$50,000 , population less than 500,000)
+-   **GDP group:** countries were grouped into **Low, Middle, and High GDP** categories, with about one-third of countries in each group.
+-   **Income Group:** Low, Lower-Middle, Upper-Middle, and High using GDP per capita **thresholds.** Low (less than \$1,000) / Lower-Middle (\$1,000 -\$4,000) / Upper-Middle (\$4,000 - \$12,500) / High (greater than \$12,500)
+-   **Urban Rural Gap:** urban minus rural access rate (percentage points)
+-   **Poverty Group:** Low , Middle , High groups, with about one-third of countries in each group, with about one-third of countries in each group.
+
+## Question #1: (Yining) - How is GDP per capita associated with electrification rate across African countries?
+
+How is GDP per capita associated with electrification rate across African countries?
+
+**Relevance**:
+
+Electrification rate is one of the most fundamental measures of energy access. Examining it against GDP helps identify whether economic development alone drives access, and which countries fall below expectations for their income level -- the clearest targets for CATF intervention.
+
+## Q1: Variables & Approach
+
+**Variables used:**
+
+-   **GDP** : GDP per capita (USD)
+-   **Electrification Rate** : % of population with electricity access
+
+**New variables/groups defined:**
+
+-   **GDP Group** : countries were grouped into **Low, Middle, and High GDP** categories, with about one-third of countries in each group.
+
+**Approach:**
+
+1.  Clean data - remove implausible GDP and electrification values: Countries with GDP over \$50,000 and electrification rates over 100% are physically impossible.
+2.  Compute mean and median electrification rate by gdp group
+3.  Visualize with a boxplot comparing electrification rates across GDP groups
+4.  Summarize in table showing electrification rate by GDP groups
+
+## Q1: Visualization
+
+```{r q1-plot}
+#Your plot code here 
+
+CATF_clean <- CATF_clean |>
+  mutate(gdp_group = case_when(
+    gdp <= quantile(gdp, 1/3, na.rm = TRUE) ~ "Low GDP Country",
+    gdp <= quantile(gdp, 2/3, na.rm = TRUE) ~ "Middle GDP Country",
+    TRUE                                     ~ "High GDP Country"
+  ),
+  gdp_group = factor(gdp_group,
+                     levels = c("Low GDP Country", "Middle GDP Country", "High GDP Country")))
+CATF_clean |>
+  filter(electrification_rate <= 100, gdp < 50000) |>
+  ggplot(aes(x = gdp_group, y = electrification_rate)) +
+  geom_boxplot(color="black", fill="white")+
+  labs(
+    title    = "GDP Group vs. Electrification Rate",
+    x        = "GDP Group",
+    y        = "Electrification Rate (%)",
+    caption = "Source: CATF dataset."
+  )
+
+```
+
+## Q1:Summary Table
+
+```{r q1-table}
+#Your summary table here
+
+CATF_clean|> group_by(gdp_group) |>
+  summarise(
+    Count                             = n(),
+    `Mean GDP per Capita`             = round(mean(gdp), 1),
+    `Median GDP per Capita`           = round(median(gdp), 1),
+    `Mean Electrification Rate (%)`   = round(mean(electrification_rate, na.rm = TRUE), 1),
+    `Median Electrification Rate (%)` = round(median(electrification_rate, na.rm = TRUE), 1)
+  ) |>
+  kable(caption = "Electrification Rate by GDP per Capita Group")
+```
+
+## Q1: Insights & Limitations
+
+-   **Insights :** Economic development (GDP per capita) is **positively associated** with electrification rate across African countries: countries in the high-GDP group have much higher median electrification rates than those in the middle- and low-GDP groups. For CATF, this suggests that **economic development** is an important marker of electricity access.
+
+-   **Limitations:** GDP alone **cannot explain all** variation. Countries with the same GDP per capita, the electrification rate is not exactly the same. Future: add governance and infrastructure indicators.
+
+## Question #2 : (Eqraa) - Does the urban-rural electricity access gap differ across income groups?
+
+Is the gap between urban and rural electricity access larger in poorer countries, and how does this equity divide shift as countries develop economically?
+
+**Relevance:**
+
+The urban-rural gap reveals whether access is equitably distributed within countries. Identifying which income groups have the largest gaps helps CATF prioritize off-grid and mini-grid interventions where rural populations are most underserved.
+
+## Q2: Variables & Approach
+
+**Variables:** **Urban Access Electricity Rate, Rural Access Electricity Rate, Income Group**
+
+**New variables:**
+
+-   **Urban Rural Gap**: urban minus rural access rate (percentage points)
+
+-   **Income Group**: Low (less than \$1,000) / Lower-Middle (\$1,000 -\$4,000) / Upper-Middle (\$4,000 - \$12,500) / High (greater than \$12,500)
+
+**Approach:**
+
+1.  Removed countries with missing income group values or access rates below 0% or above 100%, as these are physically impossible
+2.  Compute median urban-rural gap by income group
+3.  Visualize with scatter plot and bar chart
+4.  Summarize access rates and gap by income group in table
+
+## Q2: Visualization
+
+```{r q2-plot}
+
+q2_data <- CATF_clean |>
+  filter(
+    !is.na(urban_access_electricity_rate),
+    !is.na(rural_access_electricity_rate),
+    !is.na(income_group),
+    urban_access_electricity_rate <= 100,
+    rural_access_electricity_rate <= 100,
+    urban_access_electricity_rate >= 0,
+    rural_access_electricity_rate >= 0
+  )
+
+income_colours <- c(
+  "Low Income"   = "#d73027",
+  "Lower-Middle" = "#fc8d59",
+  "Upper-Middle" = "#4575b4",
+  "High Income"  = "#313695"
+)
+
+p2a <- q2_data |>
+  ggplot(aes(x = rural_access_electricity_rate,
+             y = urban_access_electricity_rate,
+             colour = income_group)) +
+  geom_abline(slope = 1, intercept = 0,
+              linetype = "dashed", colour = "grey50", linewidth = 0.7) +
+  geom_point(size = 2, alpha = 0.85) +
+  scale_colour_manual(values = income_colours) +
+  scale_x_continuous(limits = c(0, 105), breaks = seq(0, 100, 25)) +
+  scale_y_continuous(limits = c(0, 105), breaks = seq(0, 100, 25)) +
+  labs(
+    title    = "Urban vs. Rural Electricity Access",
+    subtitle = "Points above dashed line = urban advantage",
+    x        = "Rural Access (%)",
+    y        = "Urban Access (%)",
+    colour   = "Income Group",
+    caption  = "Source: CATF dataset."
+  ) +
+  theme_bw(base_size = 9) +
+  theme(
+    legend.position = "bottom",
+    legend.text     = element_text(size = 6),
+    legend.key.size = unit(0.35, "cm"),
+    plot.subtitle   = element_text(size = 7)
+  )
+
+p2b <- q2_data |>
+  group_by(income_group) |>
+  summarise(median_gap = median(urban_rural_gap, na.rm = TRUE), .groups = "drop") |>
+  ggplot(aes(x = income_group, y = median_gap, fill = income_group)) +
+  geom_col(alpha = 0.85, width = 0.65) +
+  scale_fill_manual(values = income_colours) +
+  labs(
+    title   = "Median Urban-Rural Gap\nby Income Group",
+    x       = NULL,
+    y       = "Gap (pp)",
+    caption = "Lower = more equitable"
+  ) +
+  theme_bw(base_size = 9) +
+  theme(
+    legend.position = "none",
+    axis.text.x     = element_text(angle = 25, hjust = 1, size = 7)
+  )
+
+plot_grid(p2a, p2b, ncol = 2, rel_widths = c(1.5, 1))
+```
+
+## Q2: Summary Table
+
+```{r q2-table}
+q2_data |>
+  group_by(`Income Group` = income_group) |>
+  summarise(
+    `n`                       = n(),
+    `Median Urban (%)` = round(median(urban_access_electricity_rate, na.rm = TRUE), 1),
+    `Median Rural (%)` = round(median(rural_access_electricity_rate, na.rm = TRUE), 1),
+    `Median Gap (pp)`         = round(median(urban_rural_gap, na.rm = TRUE), 1),
+    `Max Gap (pp)`            = round(max(urban_rural_gap, na.rm = TRUE), 1)
+  ) |>
+  kable(caption = "Urban vs. Rural Access by Income Group")
+```
+
+## Q2: Insights & Limitations
+
+-   **Insights:** Every country has an urban advantage. Low-income median gap: 44pp vs. High-income: \~0pp. Gap narrows as income rises. For CATF, this suggests that rural access inequality is more severe in poorer settings, so the urban–rural gap may be a useful scorecard indicator for identifying underserved populations.
+
+<!-- -->
+
+-   **Limitations:** Urban/rural definitions vary across countries. The high-income group has a very small sample size, so comparisons for that group are less reliable. Future: standardize definitions and add reliability indicators.
+
+## Question #3: (Shutong) - Poverty Rate and Electricity Reliability
+
+Does a higher poverty rate predict worse electricity reliability (SAIDI)?
+
+**Relevance:**
+
+Reliability is distinct from access -- a country can have high electrification yet deliver unreliable power. Linking poverty to SAIDI helps CATF understand whether the poorest countries face a double burden of low access AND poor reliability.
+
+## Q3: Variables & Approach
+
+**Variables used:**
+
+-   **Poverty Rate**: proportion below poverty line
+-   **SAIDI**: outage hours per customer per year
+
+**New variable:**
+
+-   **Poverty Group**: countries were grouped into **Low, Middle, and High Poverty** categories, with about one-third of countries in each group.
+
+**Approach:**
+
+1.  Removed poverty rates above 100%, as these are physically impossible
+2.  Removed SAIDI values above 2,000 hours per year, as these are likely data errors
+3.  Compute median **SAIDI** by **Poverty Group**
+4.  Visualize with scatter plot and linear trend
+5.  Summarize median and max **SAIDI** by poverty group in table
+
+## Q3: Visualization
+
+```{r q3-plot}
+q3_data <- CATF_clean |>
+  filter(
+    !is.na(poverty_rate), !is.na(SAIDI),
+    poverty_rate > 0, poverty_rate <= 1,
+    SAIDI > 0, SAIDI <= 2000
+  )
+
+q3_data |>
+  ggplot(aes(x = poverty_rate, y = SAIDI)) +
+  geom_point(alpha = 0.6, size = 2.2) +
+  geom_smooth(method = "lm", se = FALSE, colour = "steelblue") +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title    = "Poverty Rate vs. Electricity Reliability (SAIDI)",
+    subtitle = "Each point represents one African country",
+    x        = "Poverty Rate",
+    y        = "SAIDI (Outage Hours/Year)",
+    caption  = "Source: CATF dataset. Lower SAIDI = more reliable."
+  ) +
+  theme_bw(base_size = 11)
+```
+
+## Q3: Summary Table, Insights & Limitations
+
+```{r q3-table}
+q3_data |>
+  mutate(
+    poverty_group = case_when(
+      poverty_rate <= quantile(poverty_rate, 1/3, na.rm = TRUE) ~ "Low Poverty",
+      poverty_rate <= quantile(poverty_rate, 2/3, na.rm = TRUE) ~ "Middle Poverty",
+      TRUE                                                       ~ "High Poverty"
+    ),
+    poverty_group = factor(poverty_group,
+                           levels = c("Low Poverty", "Middle Poverty", "High Poverty"))
+  ) |>
+  group_by(`Poverty Group` = poverty_group) |>
+  summarise(
+    `n`                   = n(),
+    `Median Poverty Rate` = scales::percent(median(poverty_rate, na.rm = TRUE), accuracy = 0.1),
+    `Median SAIDI (hrs)`  = round(median(SAIDI, na.rm = TRUE), 1),
+    `Max SAIDI (hrs)`     = round(max(SAIDI, na.rm = TRUE), 1)
+  ) |>
+  kable(caption = "Electricity Reliability (SAIDI) by Poverty Group")
+```
+
+-   **Insights:** Higher poverty rates tend to be associated with worse electricity reliability, as countries with more poverty generally have higher SAIDI values. For CATF, this suggests that poverty may help identify where weak reliability is concentrated, making reliability an important scorecard indicator alongside access.
+
+<!-- -->
+
+-   **Limitations:** Only 10 -15 countries pass SAIDI quality filters. Also, SAIDI measures outage duration only and does not capture all dimensions of reliability. Future: expand collection; add SAIFI metrics.
+
+## Question #4: (Yiren) - Urbanization and Electricity Consumption
+
+How does urbanization rate relate to electricity consumption per capita?
+
+**Relevance:**
+
+Consumption reflects how intensively electricity is used -- a key indicator of economic activity and energy demand. Understanding how urbanization drives consumption helps CATF anticipate which countries face rapidly growing demand.
+
+## Q4: Variables & Approach
+
+**Variables used:**
+
+-   **Urbanization Rate**: proportion of population in urban areas (0 -1 scale)
+-   **Electric Power Consumption**: kWh consumed per capita
+
+**New variable:**
+
+-   **Urban Group**: Low (less than 40%) / Medium (40-60%) / High (more than 60%) **urbanization rate**
+
+**Approach:**
+
+1.  Filter missing urbanization and consumption values
+2.  Convert **Urbanization Rate** to percentage for interpretability
+3.  Visualize with scatter plot and linear trend
+4.  Summarize mean and median consumption by **Urban Group** in table
+
+## Q4: Visualization
+
+```{r q4-plot}
+Q4_visualization <- CATF_clean |>
+  select(country, urbanization_rate, electric_power_consumption) |>
+  filter(!is.na(urbanization_rate), !is.na(electric_power_consumption)) |>
+  mutate(
+    urban_group = case_when(
+      urbanization_rate < 0.40 ~ "Low",
+      urbanization_rate <= 0.60 ~ "Medium",
+      TRUE ~ "High"
+    )
+  ) |>
+  group_by(urban_group) |>
+  summarise(mean_elec_use = mean(electric_power_consumption))
+
+Q4_visualization |>
+  ggplot(aes(x = urban_group, y = mean_elec_use)) +
+  geom_col(color = "black", fill = "gray") +
+  labs(
+    x="Urbanization group",
+    y="Average electricity consumption",
+    title="Average Electricity Consumption by Urbanization Group")
+```
+
+## Q4: Summary Table, Insights & Limitations
+
+```{r q4-table}
+CATF_clean |>
+  filter(!is.na(urbanization_rate), !is.na(electric_power_consumption)) |>
+  mutate(
+    urban_group = case_when(
+      urbanization_rate <  0.40 ~ "Low (<40%)",
+      urbanization_rate <= 0.60 ~ "Medium (40-60%)",
+      TRUE                      ~ "High (>60%)"
+    ),
+    urban_group = factor(urban_group,
+                         levels = c("Low (<40%)", "Medium (40-60%)", "High (>60%)"))
+  ) |>
+  group_by(`Urbanization Group` = urban_group) |>
+  summarise(
+    `n`                               = n(),
+    `Mean Consumption (kWh/capita)`   = round(mean(electric_power_consumption), 1),
+    `Median Consumption (kWh/capita)` = round(median(electric_power_consumption), 1)
+  ) |>
+  kable(caption = "Electricity Consumption by Urbanization Group")
+```
+
+-   **Insights :** Electricity consumption per capita is **much higher** in **highly urbanized countries**, while low- and medium-urbanization groups show similar consumption levels. For CATF, this suggests that urbanization may be most informative for identifying countries where electricity demand becomes substantially higher, which is relevant for planning and prioritizing sector indicators.
+
+<!-- -->
+
+## Q4: Summary Table, Insights & Limitations (Continued)
+
+-   **Limitations:** Urbanization alone does not fully explain differences in electricity consumption across countries, since demand may also depend on income, economic structure, and access. In addition, per capita consumption may miss informal or off-grid use. Future: add per-sector consumption data.
+
+## Overall Conclusion
+
+**Key Findings:**
+
+-   Electrification rises sharply with GDP: 33% (Low) vs. 85% (High gdp group) - Q1
+-   Urban-rural gap exceeds 44pp in low-income countries -- equity is not equal to access - Q2
+-   Higher poverty predicts worse SAIDI -- showing reliability must be tracked separately from access - Q3
+-   More urbanized countries consume significantly more electricity per capita - Q4
+
+**Connection to Theme:**
+
+Economic development shapes not just whether people have electricity, but how equitably it is distributed, how reliably it is delivered, and how intensively it is consumed. The CATF Scorecard must capture access, equity, reliability, and consumption as distinct dimensions. This four dimensions should each be representated as distinct indicators in the CATF Scorecard.
